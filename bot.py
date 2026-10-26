@@ -11,17 +11,20 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp import web
 
 # ------------------------------------------------------------------
-# Configuration
+# Configuration — Render-aware
 # ------------------------------------------------------------------
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 PORT = int(os.getenv("PORT", 8080))
-RAILWAY_DOMAIN = os.getenv("RAILWAY_PUBLIC_DOMAIN")
+
+# Render provides the full https://… URL automatically
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
 
 WEBHOOK_PATH = "/webhook"
-WEBHOOK_URL = f"https://{RAILWAY_DOMAIN}{WEBHOOK_PATH}" if RAILWAY_DOMAIN else None
+# If RENDER_EXTERNAL_URL is present, build the full webhook URL
+WEBHOOK_URL = f"{RENDER_EXTERNAL_URL}{WEBHOOK_PATH}" if RENDER_EXTERNAL_URL else None
 
 # ------------------------------------------------------------------
-# Educational content
+# Educational content (unchanged from your Railway version)
 # ------------------------------------------------------------------
 ABOUT_TEXT = """
 📊 Sharing educational trading content only
@@ -50,7 +53,7 @@ This bot provides educational material about forex trading. It does **not** offe
 """
 
 # ------------------------------------------------------------------
-# Router / handlers
+# Router / handlers (unchanged)
 # ------------------------------------------------------------------
 router = Router()
 
@@ -73,18 +76,13 @@ async def cmd_lessons(message: types.Message):
 
 @router.message(Command("news"))
 async def cmd_news(message: types.Message):
-    """
-    Fetch the latest forex headlines from a public RSS feed
-    and present them as educational context (not as trade calls).
-    FXStreet RSS is commonly used for this purpose.
-    """
-    feed_url = "https://www.fxstreet.com/rss/news"  # public RSS feed
+    feed_url = "https://www.fxstreet.com/rss/news"
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(feed_url, timeout=10) as resp:
                 resp.raise_for_status()
                 raw = await resp.text()
-    except Exception as e:
+    except Exception:
         logging.exception("Failed to fetch forex news")
         await message.answer(
             "⚠️ Could not fetch news right now. Please try again later.\n\n"
@@ -93,7 +91,7 @@ async def cmd_news(message: types.Message):
         return
 
     feed = feedparser.parse(raw)
-    entries = feed.entries[:5]  # latest 5 headlines
+    entries = feed.entries[:5]
 
     if not entries:
         await message.answer("No headlines available at the moment.\n\n" + DISCLAIMER)
@@ -108,7 +106,7 @@ async def cmd_news(message: types.Message):
 
 
 # ------------------------------------------------------------------
-# Health check for Railway
+# Health check for Render
 # ------------------------------------------------------------------
 async def health_check(request: web.Request) -> web.Response:
     return web.json_response({"status": "ok"})
@@ -121,6 +119,11 @@ async def on_startup(bot: Bot):
     if WEBHOOK_URL:
         await bot.set_webhook(WEBHOOK_URL)
         logging.info("Webhook set to %s", WEBHOOK_URL)
+    else:
+        logging.warning(
+            "RENDER_EXTERNAL_URL not found. Webhook will NOT be registered. "
+            "Are you running outside Render?"
+        )
 
 
 def main():
@@ -133,9 +136,8 @@ def main():
     dp = Dispatcher()
     dp.include_router(router)
 
-    # Build aiohttp application with health check + webhook
     app = web.Application()
-    app.router.add_get("/healthz", health_check)
+    app.router.add_get("/healthcheck", health_check)  # Render-friendly path
 
     SimpleRequestHandler(dispatcher=dp, bot=bot).register(app, path=WEBHOOK_PATH)
     setup_application(app, dp, bot=bot)
