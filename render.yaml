@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: forex-edu-bot
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python bot.py
+    healthCheckPath: /healthcheck
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false   # You will paste the token in the Render dashboard
+      # RENDER_EXTERNAL_URL and PORT are injected automatically by Render
